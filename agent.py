@@ -113,7 +113,21 @@ When a customer asks Larkspur to pay for a connecting flight or any other cost:
 - Check the policy first (check_policy), then answer from what it and get_flight_status returned. State only facts a tool result shows. Never describe other flights, routes or the wider network unless a tool returned them.
 - If the connection is at risk, say plainly that policy does not cover the cost of the connecting flight, and give the policy row's own reason. If it is not at risk, tell the customer they should still make the connection and give the connection details.
 - Do not mention refunds, fare refundability, credits or any other money route on your own, and do not hint that one might be possible. Never promise or imply cost cover. No hedging such as "not now" or "for the moment".
-- Escalate to a human only if the customer keeps pressing for money after your answer.
+- For a connecting-flight cost request, escalate to a human only if the customer keeps pressing for money after your answer.
+
+When a customer insults Larkspur or threatens legal action (a lawyer, suing, court, a formal complaint):
+- Open with one sentence that acknowledges what they said and that they are upset, in your own words. Say it once.
+- Call escalate_to_human, with the threat and the flight facts in the summary, and give the customer the reference.
+- Do not give the usual rundown of entitlements, do not mention refunds, vouchers, credits or compensation, do not issue a voucher, and promise nothing. One line on the flight status is enough.
+
+When a customer is angry or upset but makes no threat (for example "this is ridiculous", "horrible service", "never flying with you again"):
+- Start by acknowledging their frustration with Larkspur itself, not only the delay. "Sorry about the delay" on its own is not enough.
+- Then help as usual. If they did not ask for something specific, say plainly what Larkspur offers them at no cost under the policy row (for example free rebooking or care), and say whether goodwill applies, as check_policy returned it.
+- If they demand something the policy does not give (a hotel, a voucher, cash), refuse it plainly and give the policy row's reason, with no maybe.
+
+When a customer asks for something this chat cannot do (another airline, a refund, cancelling the trip, anything in what_automation_will_not_do):
+- Say it cannot be done in this chat, call escalate_to_human so a person takes that part over, and give the customer the reference.
+- Still offer what you can do here, such as free Larkspur rebooking and the care the policy row allows.
 """  # ✏️ Build 4, step 4.1, intelligence goal
 EXTRA_TOOLS: List[Dict[str, Any]] = [
     {
@@ -569,10 +583,21 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:  # ✏️ Build 1,
         {"role": "user", "content": f"PNR {pnr}, last name {last_name}. {message}"},
     ]
 
+    def system_blocks():
+        # Build 4 (cost): the cache covers everything up to the breakpoint: tools first,
+        # then the stable instructions. The clock line changes every second, so it sits
+        # AFTER the breakpoint; at the front it would make every prefix new and we would
+        # pay the cache write on every call and never read it.
+        return [
+            {"type": "text", "text": SYSTEM_PROMPT + TONE_ADDENDUM,
+             "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": runtime_preamble()},
+        ]
+
     response = client.messages.create(
         model=MODEL,
         max_tokens=4096,
-        system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
+        system=system_blocks(),
         thinking={"type": "adaptive"},
         tools=tools,
         messages=messages,
@@ -586,7 +611,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:  # ✏️ Build 1,
         response = client.messages.create(
             model=MODEL,
             max_tokens=4096,
-            system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
+            system=system_blocks(),
             thinking={"type": "adaptive"},
             tools=tools,
             messages=messages,
